@@ -30,12 +30,9 @@ public class ApiServlet  extends HttpServlet {
             throws ServletException, IOException  {
 
         UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
             userInfo = getUserInfo(request);
-            if (userInfo == null
-                || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                || userInfo.userRow == null ) {
+            if (userInfo == null || !userInfo.getIsAllowedToReadData()) {
 //            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 //            return;
                 throw new RuntimeException("User is not authorized to get data.");
@@ -66,15 +63,8 @@ public class ApiServlet  extends HttpServlet {
                 }
             }
             else if(parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null
-                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                            || userInfo.userRow == null
-                            || !(boolean)userInfo.userRow.get("is_admin")
-                    ) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null || !userInfo.getIsAdmin()) {
                         throw new RuntimeException("User is not authorized to change users data.");
                     }
                 }
@@ -127,15 +117,9 @@ public class ApiServlet  extends HttpServlet {
         //request.getParameter("page"),
 
         UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
             userInfo = getUserInfo(request);
-            if (userInfo == null
-                    || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                    || userInfo.userRow == null
-                    || (!(boolean)userInfo.userRow.get("is_power_user") && !(boolean)userInfo.userRow.get("is_admin"))) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
+            if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
                 throw new RuntimeException("User is not authorized to post data.");
             }
         }
@@ -292,15 +276,8 @@ public class ApiServlet  extends HttpServlet {
                 response.setContentType("text/plain");
             }
             else if(parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null
-                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                            || userInfo.userRow == null
-                            || !(boolean)userInfo.userRow.get("is_admin")
-                    ) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null || !userInfo.getIsAdmin()) {
                         throw new RuntimeException("User is not authorized to change users data.");
                     }
                 }
@@ -382,16 +359,10 @@ public class ApiServlet  extends HttpServlet {
             throws ServletException, IOException  {
 
         UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
             userInfo = getUserInfo(request);
-            if (userInfo == null
-                    || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                    || userInfo.userRow == null
-                    || (!(boolean)userInfo.userRow.get("is_power_user") && !(boolean)userInfo.userRow.get("is_admin"))) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
-                throw new RuntimeException("User is not authorized to put data.");
+            if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
+                throw new RuntimeException("User is not authorized to post data.");
             }
         }
 
@@ -586,15 +557,8 @@ public class ApiServlet  extends HttpServlet {
                 response.setContentType("text/plain");
             }
             else if(parts.length > 3 && parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null
-                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                            || userInfo.userRow == null
-                            || !(boolean)userInfo.userRow.get("is_admin")
-                    ) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null || !userInfo.getIsAdmin()) {
                         throw new RuntimeException("User is not authorized to change users data.");
                     }
                 }
@@ -663,16 +627,10 @@ public class ApiServlet  extends HttpServlet {
             throws ServletException, IOException, ParserException {
 
         UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
             userInfo = getUserInfo(request);
-            if (userInfo == null
-                    || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                    || userInfo.userRow == null
-                    || (!(boolean)userInfo.userRow.get("is_power_user") && !(boolean)userInfo.userRow.get("is_admin"))) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
-                throw new RuntimeException("User is not authorized to delete data.");
+            if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
+                throw new RuntimeException("User is not authorized to post data.");
             }
         }
 
@@ -734,15 +692,8 @@ public class ApiServlet  extends HttpServlet {
                 response.setContentType("text/plain");
             }
             else if(parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
-                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null
-                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
-                            || userInfo.userRow == null
-                            || !(boolean)userInfo.userRow.get("is_admin")
-                    ) {
-//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-//            return;
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null || !userInfo.getIsAdmin()) {
                         throw new RuntimeException("User is not authorized to change users data.");
                     }
                 }
@@ -2671,6 +2622,20 @@ public class ApiServlet  extends HttpServlet {
         public String userName;
         public JSONObject tokenInfo;
         public JSONObject userRow;
+        public boolean getIsAdmin() {
+            return (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userName))
+                    ||
+                    (userRow != null && userRow.get("is_admin") != null && userRow.get("is_admin").equals("t"));
+        }
+        public boolean getIsPowerUser() {
+            return userRow != null && userRow.get("is_power_user") != null && userRow.get("is_power_user").equals("t");
+        }
+        public boolean getIsAllowedToReadData() {
+            return getIsAdmin() || userRow != null;
+        }
+        public boolean getIsAllowedToChangeData() {
+            return getIsAdmin() || getIsPowerUser();
+        }
     }
 
 }
