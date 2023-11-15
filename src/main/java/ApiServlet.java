@@ -29,6 +29,19 @@ public class ApiServlet  extends HttpServlet {
     public void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException  {
 
+        UserInfo userInfo = null;
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+            userInfo = getUserInfo(request);
+            if (userInfo == null
+                || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                || userInfo.userRow == null ) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                throw new RuntimeException("User is not authorized to get data.");
+            }
+        }
+
         String pathInfo = request.getPathInfo();
         //System.out.println("Hello");
         String[] parts = pathInfo.split("/");
@@ -50,6 +63,28 @@ public class ApiServlet  extends HttpServlet {
                 }
                 else {
                     result = getAggregationList(true, null);
+                }
+            }
+            else if(parts[2].equals("users")) {
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null
+                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                            || userInfo.userRow == null
+                            || !(boolean)userInfo.userRow.get("is_admin")
+                    ) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                        throw new RuntimeException("User is not authorized to change users data.");
+                    }
+                }
+
+                response.setContentType("application/json");
+                if(parts.length > 3) {
+                    result = getUserList(false, parts[3]);
+                }
+                else {
+                    result = getUserList(true, null);
                 }
             }
             else if(parts[2].equals("events")) {
@@ -91,8 +126,21 @@ public class ApiServlet  extends HttpServlet {
             throws ServletException, IOException  {
         //request.getParameter("page"),
 
+        UserInfo userInfo = null;
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+            userInfo = getUserInfo(request);
+            if (userInfo == null
+                    || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                    || userInfo.userRow == null
+                    || (!(boolean)userInfo.userRow.get("is_power_user") && !(boolean)userInfo.userRow.get("is_admin"))) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                throw new RuntimeException("User is not authorized to post data.");
+            }
+        }
+
         String pathInfo = request.getPathInfo();
-        //System.out.println("Hello");
         String[] parts = pathInfo.split("/");
         String result = "";
 
@@ -201,6 +249,20 @@ public class ApiServlet  extends HttpServlet {
                         }
                     }
                     else {
+                        JSONObject processJSON = getProcessorJson(start_nifi_process_id);
+                        String processGroupId = ((JSONObject)processJSON.get("component")).get("parentGroupId").toString();
+
+                        JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
+                        String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
+                        //change variables variables
+                        changeProcessGroupVariables(
+                                processGroupId,
+                                version,
+                                start_nifi_process_id,
+                                null,
+                                table_name
+                        );
+
                         result = CreateAggregationTableRow(
                                 aggregation_name,
                                 table_name,
@@ -208,7 +270,7 @@ public class ApiServlet  extends HttpServlet {
                                 new java.sql.Timestamp(System.currentTimeMillis()),
                                 (String)json.get("scheduling_strategy"),
                                 (String)json.get("scheduling_period"),
-                                null,
+                                processGroupId,
                                 start_nifi_process_id,
                                 is_generated_nifi_process
                         );
@@ -221,6 +283,47 @@ public class ApiServlet  extends HttpServlet {
                     e.printStackTrace();
                     System.out.println(e.getMessage());
                 }catch (InterruptedException e){
+                    response.setStatus(500);
+                    result = e.getMessage();
+                    e.printStackTrace();
+                    System.out.println(e.getMessage());
+                }
+
+                response.setContentType("text/plain");
+            }
+            else if(parts[2].equals("users")) {
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null
+                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                            || userInfo.userRow == null
+                            || !(boolean)userInfo.userRow.get("is_admin")
+                    ) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                        throw new RuntimeException("User is not authorized to change users data.");
+                    }
+                }
+
+                StringBuffer jb = new StringBuffer();
+                String line = null;
+                BufferedReader reader = request.getReader();
+                while ((line = reader.readLine()) != null)
+                    jb.append(line);
+
+                try {
+                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+
+                    String user_name = (String)json.get("user_name");
+                    boolean is_admin = (Boolean)json.get("is_admin");
+                    boolean is_power_user = (Boolean)json.get("is_power_user");
+
+                    result = CreateUserTableRow(
+                            user_name,
+                            is_admin,
+                            is_power_user
+                    );
+                }catch (org.json.simple.parser.ParseException e){
                     response.setStatus(500);
                     result = e.getMessage();
                     e.printStackTrace();
@@ -277,7 +380,20 @@ public class ApiServlet  extends HttpServlet {
     @Override
     public void doPut(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException  {
-        //request.getParameter("page"),
+
+        UserInfo userInfo = null;
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+            userInfo = getUserInfo(request);
+            if (userInfo == null
+                    || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                    || userInfo.userRow == null
+                    || (!(boolean)userInfo.userRow.get("is_power_user") && !(boolean)userInfo.userRow.get("is_admin"))) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                throw new RuntimeException("User is not authorized to put data.");
+            }
+        }
 
         String pathInfo = request.getPathInfo();
         //System.out.println("Hello");
@@ -469,6 +585,49 @@ public class ApiServlet  extends HttpServlet {
 
                 response.setContentType("text/plain");
             }
+            else if(parts.length > 3 && parts[2].equals("users")) {
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null
+                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                            || userInfo.userRow == null
+                            || !(boolean)userInfo.userRow.get("is_admin")
+                    ) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                        throw new RuntimeException("User is not authorized to change users data.");
+                    }
+                }
+                StringBuffer jb = new StringBuffer();
+                String line = null;
+                BufferedReader reader = request.getReader();
+                while ((line = reader.readLine()) != null)
+                    jb.append(line);
+
+                try {
+                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+                    String user_name = (String)json.get("user_name");
+                    boolean is_admin = (Boolean)json.get("is_admin");
+                    boolean is_power_user = (Boolean)json.get("is_power_user");
+
+                    UpdateUserTableRow(
+                            parts[3],
+                            user_name,
+                            is_admin,
+                            is_power_user
+                    );
+
+
+                } catch (org.json.simple.parser.ParseException e) {
+                    response.setStatus(500);
+                    response.setContentType("text/plain");
+                    result = e.getMessage();
+                    e.printStackTrace();
+                    System.out.println(e.getMessage());
+                }
+
+                response.setContentType("text/plain");
+            }
             else if(parts[2].equals("settings")) {
 
                 StringBuffer jb = new StringBuffer();
@@ -502,7 +661,20 @@ public class ApiServlet  extends HttpServlet {
     @Override
     public void doDelete(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException, ParserException {
-        //request.getParameter("page"),
+
+        UserInfo userInfo = null;
+        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+            userInfo = getUserInfo(request);
+            if (userInfo == null
+                    || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                    || userInfo.userRow == null
+                    || (!(boolean)userInfo.userRow.get("is_power_user") && !(boolean)userInfo.userRow.get("is_admin"))) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                throw new RuntimeException("User is not authorized to delete data.");
+            }
+        }
 
         String pathInfo = request.getPathInfo();
         //System.out.println("Hello");
@@ -558,6 +730,24 @@ public class ApiServlet  extends HttpServlet {
                     e.printStackTrace();
                     System.out.println(e.getMessage());
                 }
+
+                response.setContentType("text/plain");
+            }
+            else if(parts[2].equals("users")) {
+                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null
+                        && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                    if (userInfo == null
+                            || (System.getenv("ADMIN_USERNAME") != null && !System.getenv("ADMIN_USERNAME").equals(userInfo.userName))
+                            || userInfo.userRow == null
+                            || !(boolean)userInfo.userRow.get("is_admin")
+                    ) {
+//            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+//            return;
+                        throw new RuntimeException("User is not authorized to change users data.");
+                    }
+                }
+
+                DeleteUserTableRow(parts[3]);
 
                 response.setContentType("text/plain");
             }
@@ -629,6 +819,92 @@ public class ApiServlet  extends HttpServlet {
 
     private String getAggregationList(Boolean all, String id) {
         JSONArray jsonArray = getAggregationListJson(all, id);
+        if(all) {
+            return JSONValue.toJSONString(jsonArray);
+        }
+        else if(jsonArray.size() > 0) {
+            return JSONValue.toJSONString(jsonArray.get(0));
+        }
+        else {
+            return "";
+        }
+    }
+
+    private JSONArray getUserListJson(Boolean all, String id) {
+        Connection conn = null;
+        JSONArray arr = new JSONArray();
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String query = "select * from am.users";
+
+            PreparedStatement prep;
+            if(all){
+                prep = conn.prepareStatement(query);
+            }
+            else {
+                query += " WHERE id = ?";
+                prep = conn.prepareStatement(query);
+                prep.setString(1, id);
+            }
+            ResultSet rs = prep.executeQuery();
+            JSONArray jsonArray = (JSONArray)getJsonArray(rs);
+            return jsonArray;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private JSONArray getUserListJsonByUserName(String user_name) {
+        Connection conn = null;
+        JSONArray arr = new JSONArray();
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String query = "select * from am.users WHERE user_name = ?";
+
+            PreparedStatement prep;
+            prep = conn.prepareStatement(query);
+            prep.setString(1, user_name);
+
+            ResultSet rs = prep.executeQuery();
+            JSONArray jsonArray = (JSONArray)getJsonArray(rs);
+            return jsonArray;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private String getUserList(Boolean all, String id) {
+        JSONArray jsonArray = getUserListJson(all, id);
         if(all) {
             return JSONValue.toJSONString(jsonArray);
         }
@@ -921,6 +1197,108 @@ public class ApiServlet  extends HttpServlet {
         return null;
     }
 
+    private String CreateUserTableRow(
+            String user_name,
+            Boolean is_admin,
+            Boolean is_power_user
+    ) {
+        Connection conn = null;
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String insertQuery = "INSERT INTO am.users (" +
+                    "user_name, " +
+                    "is_admin, " +
+                    "is_power_user) " +
+                    "VALUES(?,?,?)";
+            PreparedStatement prep = conn.prepareStatement(insertQuery ,Statement.RETURN_GENERATED_KEYS);
+            prep.setString(1, user_name);
+            if(is_admin == null) {
+                prep.setNull(2, java.sql.Types.NULL);
+            }
+            else {
+                prep.setBoolean(2, is_admin);
+            }
+            if(is_power_user == null) {
+                prep.setNull(3, java.sql.Types.NULL);
+            }
+            else {
+                prep.setBoolean(3, is_power_user);
+            }
+            prep.executeUpdate();
+            ResultSet rs = prep.getGeneratedKeys();
+            if(rs.next() && rs != null){
+                return rs.getString(1);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private String UpdateUserTableRow(
+            String id,
+            String user_name,
+            Boolean is_admin,
+            Boolean is_power_user
+    ) {
+        Connection conn = null;
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String updateQuery = "UPDATE am.users SET " +
+                    "user_name = ?, " +
+                    "is_admin = ?, " +
+                    "is_power_user = ? " +
+                    "WHERE id = ?";
+            PreparedStatement prep = conn.prepareStatement(updateQuery);
+            prep.setString(1, user_name);
+            if(is_admin == null) {
+                prep.setNull(2, java.sql.Types.NULL);
+            }
+            else {
+                prep.setBoolean(2, is_admin);
+            }
+            if(is_power_user == null) {
+                prep.setNull(3, java.sql.Types.NULL);
+            }
+            else {
+                prep.setBoolean(3, is_power_user);
+            }
+            prep.setString(4, id);
+            prep.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
     private String UpdateSettingsTableRow(
             String default_template_id
     ) {
@@ -958,6 +1336,34 @@ public class ApiServlet  extends HttpServlet {
             Class.forName("org.postgresql.Driver");
             conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
             String updateQuery = "DELETE FROM am.aggregations WHERE id = ?";
+            PreparedStatement prep = conn.prepareStatement(updateQuery);
+            prep.setString(1, id);
+            prep.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private String DeleteUserTableRow(String id) {
+        Connection conn = null;
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String updateQuery = "DELETE FROM am.users WHERE id = ?";
             PreparedStatement prep = conn.prepareStatement(updateQuery);
             prep.setString(1, id);
             prep.executeUpdate();
@@ -1891,6 +2297,7 @@ public class ApiServlet  extends HttpServlet {
             result = response.toString();
 //            System.out.println(result);
 
+
             try {
                 JSONObject json = (JSONObject) JSONValue.parseWithException(result);
                 JSONObject revisionJSONObject = (JSONObject)json.get("revision");
@@ -1906,6 +2313,48 @@ public class ApiServlet  extends HttpServlet {
 
         con.disconnect();
         return result;
+    }
+
+    private JSONObject getProcessorJson(String id) throws IOException {
+        String result = "";
+
+        URL url = new URL("http://nifi:8080/nifi-api/processors/" + id);
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+        con.setRequestProperty("Content-Type", "application/json");
+//        con.setConnectTimeout(5000);
+//        con.setReadTimeout(5000);
+
+        int responseCode = con.getResponseCode();
+        System.out.println("GET Response Code :: " + responseCode);
+        if (responseCode == HttpURLConnection.HTTP_OK) { // success
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            // print result
+            result = response.toString();
+//            System.out.println(result);
+
+            try {
+                JSONObject json = (JSONObject) JSONValue.parseWithException(result);
+                return json;
+            }catch (org.json.simple.parser.ParseException e){
+                e.printStackTrace();
+                System.out.println(e.getMessage());
+            }
+
+        } else {
+            System.out.println("GET request did not work.");
+        }
+
+        con.disconnect();
+        return null;
     }
 
     private JSONObject getProcessGroupJson(String id) throws IOException {
@@ -2119,6 +2568,109 @@ public class ApiServlet  extends HttpServlet {
         return null;
     }
 
+    private JSONObject getKeyCloakTokenInfo(String token) throws IOException {
 
+        //KEYCLOAK_AUTH_BASE_PATH=https://sso-st.dpd.ch/auth/
+        //KEYCLOAK_AUTH_REALM=DPD
+        URL url = new URL(
+                System.getenv("KEYCLOAK_AUTH_BASE_PATH")
+                        + "realms/"
+                        + System.getenv("KEYCLOAK_AUTH_REALM")
+                        + "/protocol/openid-connect/token/introspect"
+        );
+
+//        System.out.println("url:");
+//        System.out.println(url.toString());
+
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setDoOutput(true);
+//        con.setConnectTimeout(5000);
+//        con.setReadTimeout(5000);
+
+        OutputStream os = con.getOutputStream();
+        OutputStreamWriter osw = new OutputStreamWriter(os, "UTF-8");
+
+        String data = "client_secret=" + System.getenv("KEYCLOAK_CLIENT_SECRET")
+                + "&client_id=" + System.getenv("KEYCLOAK_CLIENT_ID")
+                + "&token=" + token;
+        osw.write(data);
+        osw.flush();
+        osw.close();
+        os.close();  //don't forget to close the OutputStream
+
+//        System.out.println("data:");
+//        System.out.println(data);
+
+        int responseCode = con.getResponseCode();
+        System.out.println("GET Response Code :: " + responseCode);
+        if (responseCode == HttpURLConnection.HTTP_OK) { // success
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            // print result
+            String result = response.toString();
+            //System.out.println(result);
+
+            try {
+                return (JSONObject) JSONValue.parseWithException(result);
+            }catch (org.json.simple.parser.ParseException e){
+                e.printStackTrace();
+                System.out.println(e.getMessage());
+            }
+
+        } else {
+            System.out.println("GET request did not work.");
+        }
+
+        con.disconnect();
+
+        return null;
+    }
+
+    private UserInfo getUserInfo(HttpServletRequest request) throws IOException {
+        String jwttoken = request.getHeader("Authorization");
+        if(jwttoken != null) {
+            String[] tokenArray = jwttoken.split(" ");
+            String token = tokenArray[1];
+
+            JSONObject tokenInfo = getKeyCloakTokenInfo(token);
+
+            if(tokenInfo != null) {
+                UserInfo userInfo = new UserInfo();
+                userInfo.tokenInfo = tokenInfo;
+                if(tokenInfo.containsKey("active")) {
+                    boolean activeValue = (boolean)tokenInfo.get("active");
+                    if(activeValue) {
+                        String username = (String)tokenInfo.get("username");
+                        userInfo.userName = username;
+
+                        JSONArray userList = getUserListJsonByUserName(username);
+
+                        if(userList.size() > 0) {
+//                                System.out.println("userRow :");
+//                                System.out.println(userList.get(0).toString());
+                            userInfo.userRow = (JSONObject)userList.get(0);
+                            return userInfo;
+                        }
+                    }
+                }
+                return userInfo;
+            }
+        }
+
+        return null;
+    }
+
+    private class UserInfo {
+        public String userName;
+        public JSONObject tokenInfo;
+        public JSONObject userRow;
+    }
 
 }

@@ -18,7 +18,11 @@
     </init-param>
     <init-param>
       <param-name>cors.exposed.headers</param-name>
-      <param-value>Access-Control-Allow-Origin,Access-Control-Allow-Methods</param-value>
+      <param-value>Access-Control-Allow-Origin,Access-Control-Allow-Methods,Authorization,authorization</param-value>
+    </init-param>
+    <init-param>
+      <param-name>cors.allowed.headers</param-name>
+      <param-value>Access-Control-Allow-Origin,Access-Control-Allow-Methods,Authorization,authorization,content-type</param-value>
     </init-param>
   </filter>
   <filter-mapping>
