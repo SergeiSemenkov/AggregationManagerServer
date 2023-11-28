@@ -29,85 +29,106 @@ public class ApiServlet  extends HttpServlet {
     public void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException  {
 
-        UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-            userInfo = getUserInfo(request);
-            if (userInfo == null || !userInfo.getIsAllowedToReadData()) {
+        try {
+            UserInfo userInfo = null;
+            if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                userInfo = getUserInfo(request);
+                if (userInfo == null || !userInfo.getIsAllowedToReadData()) {
 //            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
 //            return;
-                throw new RuntimeException("User is not authorized to get data.");
+                    throw new RuntimeException("User is not authorized to get data.");
+                }
             }
-        }
 
-        String pathInfo = request.getPathInfo();
-        //System.out.println("Hello");
-        String[] parts = pathInfo.split("/");
-        String result = "";
+            String pathInfo = request.getPathInfo();
+            //System.out.println("Hello");
+            String[] parts = pathInfo.split("/");
+            String result = "";
 
-        if(parts.length > 2 && parts[1].equals("v1")) {
-            if(parts[2].equals("aggregations")) {
-                response.setContentType("application/json");
-                if(parts.length > 4) {
-                    if(parts[4].equals("run-status")) {
-                        //get start_nifi_process_id
-                        String start_nifi_process_id = getStartNifiProcessIdFromDb(parts[3]);
-                        //get state
-                        result = getProcessorState(start_nifi_process_id);
+            if(parts.length > 2 && parts[1].equals("v1")) {
+                if(parts[2].equals("aggregations")) {
+                    response.setContentType("application/json");
+                    if(parts.length > 4) {
+                        if(parts[4].equals("run-status")) {
+                            //get start_nifi_process_id
+                            String start_nifi_process_id = getStartNifiProcessIdFromDb(parts[3]);
+                            //get state
+                            result = getProcessorState(start_nifi_process_id);
+                        }
+                    }
+                    else if(parts.length > 3) {
+                        result = getAggregationList(false, parts[3]);
+                    }
+                    else {
+                        result = getAggregationList(true, null);
                     }
                 }
-                else if(parts.length > 3) {
-                    result = getAggregationList(false, parts[3]);
-                }
-                else {
-                    result = getAggregationList(true, null);
-                }
-            }
-            else if(parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null || !userInfo.getIsAdmin()) {
-                        throw new RuntimeException("User is not authorized to change users data.");
+                else if(parts[2].equals("users")) {
+                    if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                        if (userInfo == null || !userInfo.getIsAdmin()) {
+                            throw new RuntimeException("User is not authorized to change users data.");
+                        }
+                    }
+
+                    response.setContentType("application/json");
+                    if(parts.length > 3) {
+                        result = getUserList(false, parts[3]);
+                    }
+                    else {
+                        result = getUserList(true, null);
                     }
                 }
+                else if(parts[2].equals("events")) {
+                    response.setContentType("application/json");
+                    result = getEvents();
+                }
+                else if(parts[2].equals("settings")) {
+                    response.setContentType("application/json");
+                    result = JSONValue.toJSONString(getSettingsJson());
+                }
+                else if(parts[2].equals("templates")) {
+                    response.setContentType("application/json");
+                    result = getTemplates();
+                }
+                else if(parts[2].equals("nifi-processes")) {
+                    response.setContentType("application/json");
+                    result = getNifiProcesses();
+                }
+                else if(parts[2].equals("source-tables")) {
+                    response.setContentType("application/json");
+                    result = getSourceTables();
+                }
+                else if(parts[2].equals("source-table-columns")) {
+                    response.setContentType("application/json");
+                    result = getSourceTableColumns(
+                            request.getParameter("database"),
+                            request.getParameter("table")
+                    );
+                }
+            }
+            PrintWriter out = response.getWriter();
+            out.print(result);
+        } catch (Exception e) {
+            JSONObject exceptionObject = new JSONObject();
+            exceptionObject.put("status", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            exceptionObject.put("message", e.getMessage());
 
-                response.setContentType("application/json");
-                if(parts.length > 3) {
-                    result = getUserList(false, parts[3]);
-                }
-                else {
-                    result = getUserList(true, null);
-                }
-            }
-            else if(parts[2].equals("events")) {
-                response.setContentType("application/json");
-                result = getEvents();
-            }
-            else if(parts[2].equals("settings")) {
-                response.setContentType("application/json");
-                result = JSONValue.toJSONString(getSettingsJson());
-            }
-            else if(parts[2].equals("templates")) {
-                response.setContentType("application/json");
-                result = getTemplates();
-            }
-            else if(parts[2].equals("nifi-processes")) {
-                response.setContentType("application/json");
-                result = getNifiProcesses();
-            }
-            else if(parts[2].equals("source-tables")) {
-                response.setContentType("application/json");
-                result = getSourceTables();
-            }
-            else if(parts[2].equals("source-table-columns")) {
-                response.setContentType("application/json");
-                result = getSourceTableColumns(
-                        request.getParameter("database"),
-                        request.getParameter("table")
-                );
-            }
+//            JSONArray exceptionErrors = new JSONArray();
+
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+
+            exceptionObject.put("details", sw.toString());
+
+            response.setContentType("application/json");
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+
+
+            PrintWriter out = response.getWriter();
+            out.print(JSONValue.toJSONString(exceptionObject));
+
         }
-
-        PrintWriter out = response.getWriter();
-        out.print(result);
     }
 
     // Create
@@ -116,78 +137,128 @@ public class ApiServlet  extends HttpServlet {
             throws ServletException, IOException  {
         //request.getParameter("page"),
 
-        UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-            userInfo = getUserInfo(request);
-            if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
-                throw new RuntimeException("User is not authorized to post data.");
+        try {
+            UserInfo userInfo = null;
+            if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                userInfo = getUserInfo(request);
+                if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
+                    throw new RuntimeException("User is not authorized to post data.");
+                }
             }
-        }
 
-        String pathInfo = request.getPathInfo();
-        String[] parts = pathInfo.split("/");
-        String result = "";
+            String pathInfo = request.getPathInfo();
+            String[] parts = pathInfo.split("/");
+            String result = "";
 
-        if(parts.length > 2 && parts[1].equals("v1")) {
-            if(parts[2].equals("aggregations")) {
+            if(parts.length > 2 && parts[1].equals("v1")) {
+                if(parts[2].equals("aggregations")) {
 
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
 
-                try {
-                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+                    try {
+                        JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
 
-                    String start_nifi_process_id = (String)json.get("start_nifi_process_id");
-                    String aggregation_name = (String)json.get("aggregation_name");
-                    String table_name = (String)json.get("table_name");
-                    String temp_table_name = table_name + "_temp";
+                        String start_nifi_process_id = (String)json.get("start_nifi_process_id");
+                        String aggregation_name = (String)json.get("aggregation_name");
+                        String table_name = (String)json.get("table_name");
+                        String temp_table_name = table_name + "_temp";
 
-                    boolean is_generated_nifi_process = (Boolean)json.get("is_generated_nifi_process");
+                        boolean is_generated_nifi_process = (Boolean)json.get("is_generated_nifi_process");
 
-                    if(is_generated_nifi_process) {
-                        //get clickhouse query
-                        String query = (String) json.get("query");
-//                        String createTableQuery = "createTableQuery stub";
-//                        createTableQuery = GetCreateTableQuery(
-//                                temp_table_name,
-//                                (String) json.get("query"));
+                        if(is_generated_nifi_process) {
+                            //get clickhouse query
+                            String query = (String) json.get("query");
+    //                        String createTableQuery = "createTableQuery stub";
+    //                        createTableQuery = GetCreateTableQuery(
+    //                                temp_table_name,
+    //                                (String) json.get("query"));
 
 
-                        JSONObject settings = getSettingsJson();
+                            JSONObject settings = getSettingsJson();
 
-                        //new template instance
-                        // nifi_process_group_id, version
-                        HashMap<String, String> processGroupParameters =
-                                //nifiNewTemplateInstance((String)settings.get("default_template_id"));
-                                nifiNewTemplateInstance((String)json.get("template"));
+                            //new template instance
+                            // nifi_process_group_id, version
+                            HashMap<String, String> processGroupParameters =
+                                    //nifiNewTemplateInstance((String)settings.get("default_template_id"));
+                                    nifiNewTemplateInstance((String)json.get("template"));
 
-                        String processGroupId = processGroupParameters.get("nifi_process_group_id");
+                            String processGroupId = processGroupParameters.get("nifi_process_group_id");
 
-                        //set name
-                        changeProcessGroupName(
-                                processGroupId,
-                                processGroupParameters.get("version"),
-                                aggregation_name
-                        );
-
-                        start_nifi_process_id = this.getStartNifiProcessId(processGroupId);
-
-                        String aggregationId = null;
-                        try {
-                            aggregationId = CreateAggregationTableRow(
-                                    aggregation_name,
-                                    table_name,
-                                    (String) json.get("query"),
-                                    new java.sql.Timestamp(System.currentTimeMillis()),
-                                    (String) json.get("scheduling_strategy"),
-                                    (String) json.get("scheduling_period"),
+                            //set name
+                            changeProcessGroupName(
                                     processGroupId,
-                                    start_nifi_process_id,
-                                    is_generated_nifi_process
+                                    processGroupParameters.get("version"),
+                                    aggregation_name
                             );
+
+                            start_nifi_process_id = this.getStartNifiProcessId(processGroupId);
+
+                            String aggregationId = null;
+                            try {
+                                aggregationId = CreateAggregationTableRow(
+                                        aggregation_name,
+                                        table_name,
+                                        (String) json.get("query"),
+                                        new java.sql.Timestamp(System.currentTimeMillis()),
+                                        (String) json.get("scheduling_strategy"),
+                                        (String) json.get("scheduling_period"),
+                                        processGroupId,
+                                        start_nifi_process_id,
+                                        is_generated_nifi_process,
+                                        userInfo == null? null: userInfo.userName,
+                                        userInfo == null? null: userInfo.userName
+                                        );
+
+                                JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
+                                String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
+                                //change variables variables
+                                changeProcessGroupVariables(
+                                        processGroupId,
+                                        version,
+                                        aggregationId,
+                                        query,
+                                        table_name
+                                );
+
+                                //set scheduling
+                                setProcessorScheduling(
+                                        start_nifi_process_id,
+                                        "0",
+                                        (String) json.get("scheduling_strategy"),
+                                        (String) json.get("scheduling_period")
+                                );
+
+                                //activate controllers
+                                setControllerServicesState(processGroupId, "ENABLED");
+
+                                waitControllerServicesState(processGroupId, "ENABLED");
+
+                                //run process group
+                                setProcessorGroupState(processGroupId, "RUNNING");
+                            }
+                            catch(Exception e) {
+                                DeleteAggregationTableRow(aggregationId);
+                                JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
+                                if (processGroupJSON != null) {
+                                    String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
+                                    setProcessorGroupState(processGroupId, "STOPPED");
+
+                                    setControllerServicesState(processGroupId, "DISABLED");
+                                    waitControllerServicesState(processGroupId, "DISABLED");
+
+                                    deleteProcessGroup(processGroupId, version);
+                                }
+
+                                throw e;
+                            }
+                        }
+                        else {
+                            JSONObject processJSON = getProcessorJson(start_nifi_process_id);
+                            String processGroupId = ((JSONObject)processJSON.get("component")).get("parentGroupId").toString();
 
                             JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
                             String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
@@ -195,162 +266,137 @@ public class ApiServlet  extends HttpServlet {
                             changeProcessGroupVariables(
                                     processGroupId,
                                     version,
-                                    aggregationId,
-                                    query,
+                                    start_nifi_process_id,
+                                    null,
                                     table_name
                             );
 
-                            //set scheduling
-                            setProcessorScheduling(
+                            result = CreateAggregationTableRow(
+                                    aggregation_name,
+                                    table_name,
+                                    (String)json.get("query"),
+                                    new java.sql.Timestamp(System.currentTimeMillis()),
+                                    (String)json.get("scheduling_strategy"),
+                                    (String)json.get("scheduling_period"),
+                                    processGroupId,
                                     start_nifi_process_id,
-                                    "0",
-                                    (String) json.get("scheduling_strategy"),
-                                    (String) json.get("scheduling_period")
+                                    is_generated_nifi_process,
+                                    userInfo == null? null: userInfo.userName,
+                                    userInfo == null? null: userInfo.userName
                             );
-
-                            //activate controllers
-                            setControllerServicesState(processGroupId, "ENABLED");
-
-                            waitControllerServicesState(processGroupId, "ENABLED");
-
-                            //run process group
-                            setProcessorGroupState(processGroupId, "RUNNING");
                         }
-                        catch(Exception e) {
-                            DeleteAggregationTableRow(aggregationId);
-                            JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
-                            if (processGroupJSON != null) {
-                                String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
-                                setProcessorGroupState(processGroupId, "STOPPED");
 
-                                setControllerServicesState(processGroupId, "DISABLED");
-                                waitControllerServicesState(processGroupId, "DISABLED");
 
-                                deleteProcessGroup(processGroupId, version);
-                            }
+                    }catch (org.json.simple.parser.ParseException e){
+                        response.setStatus(500);
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
+                    }catch (InterruptedException e){
+                        response.setStatus(500);
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
+                    }
 
-                            throw e;
+                    response.setContentType("text/plain");
+                }
+                else if(parts[2].equals("users")) {
+                    if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                        if (userInfo == null || !userInfo.getIsAdmin()) {
+                            throw new RuntimeException("User is not authorized to change users data.");
                         }
                     }
-                    else {
-                        JSONObject processJSON = getProcessorJson(start_nifi_process_id);
-                        String processGroupId = ((JSONObject)processJSON.get("component")).get("parentGroupId").toString();
 
-                        JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
-                        String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
-                        //change variables variables
-                        changeProcessGroupVariables(
-                                processGroupId,
-                                version,
-                                start_nifi_process_id,
-                                null,
-                                table_name
-                        );
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
 
-                        result = CreateAggregationTableRow(
-                                aggregation_name,
-                                table_name,
-                                (String)json.get("query"),
-                                new java.sql.Timestamp(System.currentTimeMillis()),
-                                (String)json.get("scheduling_strategy"),
-                                (String)json.get("scheduling_period"),
-                                processGroupId,
-                                start_nifi_process_id,
-                                is_generated_nifi_process
+                    try {
+                        JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+
+                        String user_name = (String)json.get("user_name");
+                        boolean is_admin = (Boolean)json.get("is_admin");
+                        boolean is_power_user = (Boolean)json.get("is_power_user");
+
+                        result = CreateUserTableRow(
+                                user_name,
+                                is_admin,
+                                is_power_user
                         );
+                    }catch (org.json.simple.parser.ParseException e){
+                        response.setStatus(500);
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
                     }
 
-
-                }catch (org.json.simple.parser.ParseException e){
-                    response.setStatus(500);
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
-                }catch (InterruptedException e){
-                    response.setStatus(500);
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
+                    response.setContentType("text/plain");
                 }
+                else if(parts[2].equals("wizard-query")) {
+                    response.setContentType("application/json");
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
 
-                response.setContentType("text/plain");
-            }
-            else if(parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null || !userInfo.getIsAdmin()) {
-                        throw new RuntimeException("User is not authorized to change users data.");
+                    try {
+                        JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+
+                        result = getWizardQuery(json);
+                    }catch (org.json.simple.parser.ParseException e){
+                        response.setStatus(500);
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
                     }
                 }
+                else if(parts[2].equals("query-performance")) {
+                    response.setContentType("application/json");
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
 
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
+                    try {
+                        JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
 
-                try {
-                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
-
-                    String user_name = (String)json.get("user_name");
-                    boolean is_admin = (Boolean)json.get("is_admin");
-                    boolean is_power_user = (Boolean)json.get("is_power_user");
-
-                    result = CreateUserTableRow(
-                            user_name,
-                            is_admin,
-                            is_power_user
-                    );
-                }catch (org.json.simple.parser.ParseException e){
-                    response.setStatus(500);
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
-                }
-
-                response.setContentType("text/plain");
-            }
-            else if(parts[2].equals("wizard-query")) {
-                response.setContentType("application/json");
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
-
-                try {
-                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
-
-                    result = getWizardQuery(json);
-                }catch (org.json.simple.parser.ParseException e){
-                    response.setStatus(500);
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
+                        result = getQueryPerformance(json);
+                    }catch (org.json.simple.parser.ParseException e){
+                        response.setStatus(500);
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
+                    }
                 }
             }
-            else if(parts[2].equals("query-performance")) {
-                response.setContentType("application/json");
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
 
-                try {
-                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+            PrintWriter out = response.getWriter();
+            out.print(result);
+        } catch (Exception e) {
+            JSONObject exceptionObject = new JSONObject();
+            exceptionObject.put("status", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            exceptionObject.put("message", e.getMessage());
 
-                    result = getQueryPerformance(json);
-                }catch (org.json.simple.parser.ParseException e){
-                    response.setStatus(500);
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
-                }
-            }
+//            JSONArray exceptionErrors = new JSONArray();
+
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+
+            exceptionObject.put("details", sw.toString());
+
+            response.setContentType("application/json");
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+
+            PrintWriter out = response.getWriter();
+            out.print(JSONValue.toJSONString(exceptionObject));
+
         }
-
-        PrintWriter out = response.getWriter();
-        out.print(result);
     }
 
     // Update
@@ -358,54 +404,192 @@ public class ApiServlet  extends HttpServlet {
     public void doPut(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException  {
 
-        UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-            userInfo = getUserInfo(request);
-            if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
-                throw new RuntimeException("User is not authorized to post data.");
+        try {
+            UserInfo userInfo = null;
+            if (System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                userInfo = getUserInfo(request);
+                if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
+                    throw new RuntimeException("User is not authorized to put data.");
+                }
             }
-        }
 
-        String pathInfo = request.getPathInfo();
-        //System.out.println("Hello");
-        String[] parts = pathInfo.split("/");
-        String result = "";
+            String pathInfo = request.getPathInfo();
+            //System.out.println("Hello");
+            String[] parts = pathInfo.split("/");
+            String result = "";
 
-        if(parts.length > 2 && parts[1].equals("v1")) {
-            if(parts.length > 3 && parts[2].equals("aggregations")) {
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
+            if (parts.length > 2 && parts[1].equals("v1")) {
+                if (parts.length > 3 && parts[2].equals("aggregations")) {
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
 
-                if(parts.length > 4) {
-                    if(parts[4].equals("run-status")) {
+                    if (parts.length > 4) {
+                        if (parts[4].equals("run-status")) {
+                            try {
+                                JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+                                String state = (String) json.get("state");
+                                String start_nifi_process_id = getStartNifiProcessIdFromDb(parts[3]);
+
+                                String statusAsJson = getProcessorState(start_nifi_process_id);
+                                json = (JSONObject) JSONValue.parseWithException(statusAsJson);
+                                String currentStatus = (String) json.get("state");
+
+                                if (!currentStatus.equals(state)) {
+                                    String version = getProcessorVersion(start_nifi_process_id);
+                                    if (
+                                            currentStatus.equals("DISABLED")
+                                                    || state.equals("DISABLED")
+                                    ) {
+                                        setProcessorState(start_nifi_process_id, version, "STOPPED");
+                                        waitProcessorState(start_nifi_process_id, "STOPPED");
+                                    }
+                                    version = getProcessorVersion(start_nifi_process_id);
+                                    setProcessorState(start_nifi_process_id, version, state);
+                                    if (!state.equals("RUN_ONCE")) {
+                                        waitProcessorState(start_nifi_process_id, state);
+                                    }
+                                }
+
+                            } catch (org.json.simple.parser.ParseException e) {
+                                response.setStatus(500);
+                                response.setContentType("text/plain");
+                                result = e.getMessage();
+                                e.printStackTrace();
+                                System.out.println(e.getMessage());
+                            } catch (InterruptedException e) {
+                                response.setStatus(500);
+                                response.setContentType("text/plain");
+                                result = e.getMessage();
+                                e.printStackTrace();
+                                System.out.println(e.getMessage());
+                            }
+                        } else if (parts[4].equals("reset")) {
+                            try {
+                                JSONArray aggregationsJson = getAggregationListJson(false, parts[3]);
+                                JSONObject aggregationJSON = (JSONObject) aggregationsJson.get(0);
+
+                                boolean is_generated_nifi_process = aggregationJSON.get("is_generated_nifi_process").equals("t");
+
+                                if (is_generated_nifi_process) {
+                                    //Check if exists
+                                    String process_group_id = (String) aggregationJSON.get("process_group_id");
+                                    JSONObject processGroupJSON = getProcessGroupJson(process_group_id);
+                                    if (processGroupJSON != null) {
+
+                                        setProcessorGroupState(process_group_id, "STOPPED");
+
+                                        ArrayList<JSONObject> connections = getProcessGroupConnectionsRecursive(process_group_id);
+                                        for (JSONObject jsonObject : connections) {
+                                            dropConnectionRequest((String) jsonObject.get("id"));
+                                        }
+
+                                        String start_nifi_process_id = (String) aggregationJSON.get("start_nifi_process_id");
+                                        String version = getProcessorVersion(start_nifi_process_id);
+                                        setProcessorState(
+                                                start_nifi_process_id,
+                                                version,
+                                                "DISABLED");
+
+                                        setProcessorGroupState(process_group_id, "RUNNING");
+                                    }
+                                }
+                            } catch (org.json.simple.parser.ParseException e) {
+                                response.setStatus(500);
+                                result = e.getMessage();
+                                e.printStackTrace();
+                                System.out.println(e.getMessage());
+                            }
+                        }
+                    } else {
+
                         try {
                             JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
-                            String state = (String) json.get("state");
-                            String start_nifi_process_id = getStartNifiProcessIdFromDb(parts[3]);
+                            String aggregation_name = (String) json.get("aggregation_name");
+                            String table_name = (String) json.get("table_name");
+                            String temp_table_name = table_name + "_temp";
 
-                            String statusAsJson = getProcessorState(start_nifi_process_id);
-                            json = (JSONObject) JSONValue.parseWithException(statusAsJson);
-                            String currentStatus = (String)json.get("state");
+                            JSONArray aggregationsJson = getAggregationListJson(false, parts[3]);
+                            JSONObject aggregationJSON = (JSONObject) aggregationsJson.get(0);
 
-                            if(!currentStatus.equals(state)) {
-                                String version = getProcessorVersion(start_nifi_process_id);
-                                if (
-                                        currentStatus.equals("DISABLED")
-                                        || state.equals("DISABLED")
-                                ) {
-                                    setProcessorState(start_nifi_process_id, version, "STOPPED");
-                                    waitProcessorState(start_nifi_process_id, "STOPPED");
-                                }
-                                version = getProcessorVersion(start_nifi_process_id);
-                                setProcessorState(start_nifi_process_id, version, state);
-                                if(!state.equals("RUN_ONCE")) {
-                                    waitProcessorState(start_nifi_process_id, state);
+                            String processGroupId = (String) aggregationJSON.get("process_group_id");
+                            boolean is_generated_nifi_process = aggregationJSON.get("is_generated_nifi_process").equals("t");
+                            String start_nifi_process_id = (String) aggregationJSON.get("start_nifi_process_id");
+                            String start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
+                            setProcessorState(
+                                    start_nifi_process_id,
+                                    start_nifi_process_version,
+                                    "STOPPED");
+
+                            UpdateAggregationTableRow(
+                                    parts[3],
+                                    (String) json.get("aggregation_name"),
+                                    (String) json.get("table_name"),
+                                    (String) json.get("query"),
+                                    (String) json.get("scheduling_strategy"),
+                                    (String) json.get("scheduling_period"),
+                                    start_nifi_process_id,
+                                    //(String) json.get("start_nifi_process_id"),
+                                    is_generated_nifi_process,
+                                    //(Boolean) json.get("is_generated_nifi_process)"
+                                    userInfo == null? null: userInfo.userName
+                            );
+
+                            start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
+
+                            //set scheduling
+                            setProcessorScheduling(
+                                    start_nifi_process_id,
+                                    start_nifi_process_version,
+                                    (String) json.get("scheduling_strategy"),
+                                    (String) json.get("scheduling_period")
+                            );
+
+                            System.out.println(is_generated_nifi_process);
+                            if (is_generated_nifi_process) {
+                                //get clickhouse query
+                                String query = (String) json.get("query");
+//                            String createTableQuery = "createTableQuery stub";
+//                            createTableQuery = GetCreateTableQuery(
+//                                    temp_table_name,
+//                                    (String) json.get("query"));
+
+                                JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
+                                if (processGroupJSON != null) {
+                                    String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
+
+                                    //set name
+                                    changeProcessGroupName(
+                                            processGroupId,
+                                            version,
+                                            aggregation_name
+                                    );
+
+                                    setProcessorGroupState(processGroupId, "STOPPED");
+
+                                    processGroupJSON = getProcessGroupJson(processGroupId);
+                                    version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
+                                    //change variables variables
+                                    changeProcessGroupVariables(
+                                            processGroupId,
+                                            version,
+                                            parts[3],
+                                            query,
+                                            table_name
+                                    );
+
+                                    version = getProcessorVersion(start_nifi_process_id);
+                                    setProcessorState(
+                                            start_nifi_process_id,
+                                            version,
+                                            "DISABLED");
+
+                                    setProcessorGroupState(processGroupId, "RUNNING");
+
                                 }
                             }
-
                         } catch (org.json.simple.parser.ParseException e) {
                             response.setStatus(500);
                             response.setContentType("text/plain");
@@ -413,138 +597,35 @@ public class ApiServlet  extends HttpServlet {
                             e.printStackTrace();
                             System.out.println(e.getMessage());
                         }
-                        catch (InterruptedException e) {
-                            response.setStatus(500);
-                            response.setContentType("text/plain");
-                            result = e.getMessage();
-                            e.printStackTrace();
-                            System.out.println(e.getMessage());
+                    }
+
+                    response.setContentType("text/plain");
+                } else if (parts.length > 3 && parts[2].equals("users")) {
+                    if (System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                        if (userInfo == null || !userInfo.getIsAdmin()) {
+                            throw new RuntimeException("User is not authorized to change users data.");
                         }
                     }
-                    else if(parts[4].equals("reset")) {
-                        try {
-                            JSONArray aggregationsJson = getAggregationListJson(false, parts[3]);
-                            JSONObject aggregationJSON = (JSONObject)aggregationsJson.get(0);
-
-                            boolean is_generated_nifi_process = aggregationJSON.get("is_generated_nifi_process").equals("t");
-
-                            if(is_generated_nifi_process) {
-                                //Check if exists
-                                String process_group_id = (String) aggregationJSON.get("process_group_id");
-                                JSONObject processGroupJSON = getProcessGroupJson(process_group_id);
-                                if (processGroupJSON != null) {
-
-                                    setProcessorGroupState(process_group_id, "STOPPED");
-
-                                    ArrayList<JSONObject> connections = getProcessGroupConnectionsRecursive(process_group_id);
-                                    for(JSONObject jsonObject: connections) {
-                                        dropConnectionRequest((String)jsonObject.get("id"));
-                                    }
-
-                                    String start_nifi_process_id = (String)aggregationJSON.get("start_nifi_process_id");
-                                    String version = getProcessorVersion(start_nifi_process_id);
-                                    setProcessorState(
-                                            start_nifi_process_id,
-                                            version,
-                                            "DISABLED");
-
-                                    setProcessorGroupState(process_group_id, "RUNNING");
-                                }
-                            }
-                        }catch (org.json.simple.parser.ParseException e){
-                            response.setStatus(500);
-                            result = e.getMessage();
-                            e.printStackTrace();
-                            System.out.println(e.getMessage());
-                        }
-                    }
-                }
-                else {
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
 
                     try {
                         JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
-                        String aggregation_name = (String)json.get("aggregation_name");
-                        String table_name = (String)json.get("table_name");
-                        String temp_table_name = table_name + "_temp";
+                        String user_name = (String) json.get("user_name");
+                        boolean is_admin = (Boolean) json.get("is_admin");
+                        boolean is_power_user = (Boolean) json.get("is_power_user");
 
-                        JSONArray aggregationsJson = getAggregationListJson(false, parts[3]);
-                        JSONObject aggregationJSON = (JSONObject)aggregationsJson.get(0);
-
-                        String processGroupId = (String)aggregationJSON.get("process_group_id");
-                        boolean is_generated_nifi_process = aggregationJSON.get("is_generated_nifi_process").equals("t");
-                        String start_nifi_process_id = (String)aggregationJSON.get("start_nifi_process_id");
-                        String start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
-                        setProcessorState(
-                                start_nifi_process_id,
-                                start_nifi_process_version,
-                                "STOPPED");
-
-                        UpdateAggregationTableRow(
+                        UpdateUserTableRow(
                                 parts[3],
-                                (String) json.get("aggregation_name"),
-                                (String) json.get("table_name"),
-                                (String) json.get("query"),
-                                (String) json.get("scheduling_strategy"),
-                                (String) json.get("scheduling_period"),
-                                start_nifi_process_id,
-                                //(String) json.get("start_nifi_process_id"),
-                                is_generated_nifi_process
-                                //(Boolean) json.get("is_generated_nifi_process)"
+                                user_name,
+                                is_admin,
+                                is_power_user
                         );
 
-                        start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
 
-                        //set scheduling
-                        setProcessorScheduling(
-                                start_nifi_process_id,
-                                start_nifi_process_version,
-                                (String)json.get("scheduling_strategy"),
-                                (String)json.get("scheduling_period")
-                        );
-
-                        System.out.println(is_generated_nifi_process);
-                        if(is_generated_nifi_process) {
-                            //get clickhouse query
-                            String query = (String) json.get("query");
-//                            String createTableQuery = "createTableQuery stub";
-//                            createTableQuery = GetCreateTableQuery(
-//                                    temp_table_name,
-//                                    (String) json.get("query"));
-
-                            JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
-                            if (processGroupJSON != null) {
-                                String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
-
-                                //set name
-                                changeProcessGroupName(
-                                        processGroupId,
-                                        version,
-                                        aggregation_name
-                                );
-
-                                setProcessorGroupState(processGroupId, "STOPPED");
-
-                                processGroupJSON = getProcessGroupJson(processGroupId);
-                                version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
-                                //change variables variables
-                                changeProcessGroupVariables(
-                                        processGroupId,
-                                        version,
-                                        parts[3],
-                                        query,
-                                        table_name
-                                );
-
-                                version = getProcessorVersion(start_nifi_process_id);
-                                setProcessorState(
-                                        start_nifi_process_id,
-                                        version,
-                                        "DISABLED");
-
-                                setProcessorGroupState(processGroupId, "RUNNING");
-
-                            }
-                        }
                     } catch (org.json.simple.parser.ParseException e) {
                         response.setStatus(500);
                         response.setContentType("text/plain");
@@ -552,160 +633,160 @@ public class ApiServlet  extends HttpServlet {
                         e.printStackTrace();
                         System.out.println(e.getMessage());
                     }
-                }
 
-                response.setContentType("text/plain");
-            }
-            else if(parts.length > 3 && parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null || !userInfo.getIsAdmin()) {
-                        throw new RuntimeException("User is not authorized to change users data.");
+                    response.setContentType("text/plain");
+                } else if (parts[2].equals("settings")) {
+
+                    StringBuffer jb = new StringBuffer();
+                    String line = null;
+                    BufferedReader reader = request.getReader();
+                    while ((line = reader.readLine()) != null)
+                        jb.append(line);
+
+                    try {
+                        JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+
+                        UpdateSettingsTableRow(
+                                (String) json.get("default_template_id")
+                        );
+
+                    } catch (org.json.simple.parser.ParseException e) {
+                        response.setStatus(500);
+                        response.setContentType("text/plain");
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
                     }
+
                 }
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
-
-                try {
-                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
-                    String user_name = (String)json.get("user_name");
-                    boolean is_admin = (Boolean)json.get("is_admin");
-                    boolean is_power_user = (Boolean)json.get("is_power_user");
-
-                    UpdateUserTableRow(
-                            parts[3],
-                            user_name,
-                            is_admin,
-                            is_power_user
-                    );
-
-
-                } catch (org.json.simple.parser.ParseException e) {
-                    response.setStatus(500);
-                    response.setContentType("text/plain");
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
-                }
-
-                response.setContentType("text/plain");
             }
-            else if(parts[2].equals("settings")) {
 
-                StringBuffer jb = new StringBuffer();
-                String line = null;
-                BufferedReader reader = request.getReader();
-                while ((line = reader.readLine()) != null)
-                    jb.append(line);
+            PrintWriter out = response.getWriter();
+            out.print(result);
+        } catch (Exception e) {
+            JSONObject exceptionObject = new JSONObject();
+            exceptionObject.put("status", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            exceptionObject.put("message", e.getMessage());
 
-                try {
-                    JSONObject json = (JSONObject) JSONValue.parseWithException(jb.toString());
+//            JSONArray exceptionErrors = new JSONArray();
 
-                    UpdateSettingsTableRow(
-                            (String) json.get("default_template_id")
-                    );
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
 
-                } catch (org.json.simple.parser.ParseException e) {
-                    response.setStatus(500);
-                    response.setContentType("text/plain");
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
-                }
+            exceptionObject.put("details", sw.toString());
 
-            }
+            response.setContentType("application/json");
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+
+            PrintWriter out = response.getWriter();
+            out.print(JSONValue.toJSONString(exceptionObject));
+
         }
-
-        PrintWriter out = response.getWriter();
-        out.print(result);
     }
 
     @Override
     public void doDelete(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException, ParserException {
 
-        UserInfo userInfo = null;
-        if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-            userInfo = getUserInfo(request);
-            if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
-                throw new RuntimeException("User is not authorized to post data.");
+        try {
+            UserInfo userInfo = null;
+            if (System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                userInfo = getUserInfo(request);
+                if (userInfo == null || !userInfo.getIsAllowedToChangeData()) {
+                    throw new RuntimeException("User is not authorized to delete data.");
+                }
             }
-        }
 
-        String pathInfo = request.getPathInfo();
-        //System.out.println("Hello");
-        String[] parts = pathInfo.split("/");
-        String result = "";
+            String pathInfo = request.getPathInfo();
+            //System.out.println("Hello");
+            String[] parts = pathInfo.split("/");
+            String result = "";
 
-        if(parts.length > 3 && parts[1].equals("v1")) {
-            if(parts[2].equals("aggregations")) {
+            if (parts.length > 3 && parts[1].equals("v1")) {
+                if (parts[2].equals("aggregations")) {
 
-                try {
-                    JSONArray aggregationsJson = getAggregationListJson(false, parts[3]);
-                    JSONObject aggregationJSON = (JSONObject)aggregationsJson.get(0);
+                    try {
+                        JSONArray aggregationsJson = getAggregationListJson(false, parts[3]);
+                        JSONObject aggregationJSON = (JSONObject) aggregationsJson.get(0);
 
-                    boolean is_generated_nifi_process = aggregationJSON.get("is_generated_nifi_process").equals("t");
-                    boolean generated_nifi_process_deleted = false;
-                    if(is_generated_nifi_process) {
-                        try {
-                            //Need to Delete
-                            //Check if exists
-                            String process_group_id = (String) aggregationJSON.get("process_group_id");
-                            JSONObject processGroupJSON = getProcessGroupJson(process_group_id);
-                            if (processGroupJSON != null) {
-                                String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
-                                setProcessorGroupState(process_group_id, "STOPPED");
+                        boolean is_generated_nifi_process = aggregationJSON.get("is_generated_nifi_process").equals("t");
+                        boolean generated_nifi_process_deleted = false;
+                        if (is_generated_nifi_process) {
+                            try {
+                                //Need to Delete
+                                //Check if exists
+                                String process_group_id = (String) aggregationJSON.get("process_group_id");
+                                JSONObject processGroupJSON = getProcessGroupJson(process_group_id);
+                                if (processGroupJSON != null) {
+                                    String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
+                                    setProcessorGroupState(process_group_id, "STOPPED");
 
-                                setControllerServicesState(process_group_id, "DISABLED");
-                                waitControllerServicesState(process_group_id, "DISABLED");
+                                    setControllerServicesState(process_group_id, "DISABLED");
+                                    waitControllerServicesState(process_group_id, "DISABLED");
 
-                                ArrayList<JSONObject> connections = getProcessGroupConnectionsRecursive(process_group_id);
-                                for(JSONObject jsonObject: connections) {
-                                    dropConnectionRequest((String)jsonObject.get("id"));
+                                    ArrayList<JSONObject> connections = getProcessGroupConnectionsRecursive(process_group_id);
+                                    for (JSONObject jsonObject : connections) {
+                                        dropConnectionRequest((String) jsonObject.get("id"));
+                                    }
+
+                                    deleteProcessGroup(process_group_id, version);
                                 }
+                                generated_nifi_process_deleted = true;
+                            } catch (InterruptedException e) {
 
-                                deleteProcessGroup(process_group_id, version);
                             }
-                            generated_nifi_process_deleted = true;
                         }
-                        catch(InterruptedException e) {
 
+                        if (!is_generated_nifi_process || generated_nifi_process_deleted) {
+                            DeleteAggregationTableRow(parts[3]);
+                            DeleteEventTableRows(parts[3]);
+                        } else {
+                            throw new RuntimeException("Error while deleting generated nifi process.");
+                        }
+                    } catch (org.json.simple.parser.ParseException e) {
+                        response.setStatus(500);
+                        result = e.getMessage();
+                        e.printStackTrace();
+                        System.out.println(e.getMessage());
+                    }
+
+                    response.setContentType("text/plain");
+                } else if (parts[2].equals("users")) {
+                    if (System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
+                        if (userInfo == null || !userInfo.getIsAdmin()) {
+                            throw new RuntimeException("User is not authorized to change users data.");
                         }
                     }
 
-                    if(!is_generated_nifi_process || generated_nifi_process_deleted) {
-                        DeleteAggregationTableRow(parts[3]);
-                        DeleteEventTableRows(parts[3]);
-                    }
-                    else {
-                        throw new RuntimeException("Error while deleting generated nifi process.");
-                    }
-                }catch (org.json.simple.parser.ParseException e){
-                    response.setStatus(500);
-                    result = e.getMessage();
-                    e.printStackTrace();
-                    System.out.println(e.getMessage());
+                    DeleteUserTableRow(parts[3]);
+
+                    response.setContentType("text/plain");
                 }
-
-                response.setContentType("text/plain");
             }
-            else if(parts[2].equals("users")) {
-                if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
-                    if (userInfo == null || !userInfo.getIsAdmin()) {
-                        throw new RuntimeException("User is not authorized to change users data.");
-                    }
-                }
 
-                DeleteUserTableRow(parts[3]);
+            PrintWriter out = response.getWriter();
+            out.print(result);
+        } catch (Exception e) {
+            JSONObject exceptionObject = new JSONObject();
+            exceptionObject.put("status", HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+            exceptionObject.put("message", e.getMessage());
 
-                response.setContentType("text/plain");
-            }
+//            JSONArray exceptionErrors = new JSONArray();
+
+            StringWriter sw = new StringWriter();
+            PrintWriter pw = new PrintWriter(sw);
+            e.printStackTrace(pw);
+
+            exceptionObject.put("details", sw.toString());
+
+            response.setContentType("application/json");
+            response.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+
+            PrintWriter out = response.getWriter();
+            out.print(JSONValue.toJSONString(exceptionObject));
+
         }
-
-        PrintWriter out = response.getWriter();
-        out.print(result);
     }
 
     private JSONArray getAggregationListJson(Boolean all, String id) {
@@ -1035,7 +1116,9 @@ public class ApiServlet  extends HttpServlet {
             String scheduling_period,
             String process_group_id,
             String start_nifi_process_id,
-            Boolean is_generated_nifi_process
+            Boolean is_generated_nifi_process,
+            String created_by,
+            String last_modified_by
             ) {
         Connection conn = null;
         try {
@@ -1050,8 +1133,10 @@ public class ApiServlet  extends HttpServlet {
                     "scheduling_period, " +
                     "process_group_id, " +
                     "start_nifi_process_id, " +
-                    "is_generated_nifi_process) " +
-                    "VALUES(?,?,?,?,?,?,?,?,?)";
+                    "is_generated_nifi_process, " +
+                    "created_by, " +
+                    "last_modified_by) " +
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?)";
             PreparedStatement prep = conn.prepareStatement(insertQuery ,Statement.RETURN_GENERATED_KEYS);
             prep.setString(1, aggregation_name);
             prep.setString(2, table_name);
@@ -1067,6 +1152,8 @@ public class ApiServlet  extends HttpServlet {
             else {
                 prep.setBoolean(9, is_generated_nifi_process);
             }
+            prep.setString(10, created_by);
+            prep.setString(11, last_modified_by);
             prep.executeUpdate();
             ResultSet rs = prep.getGeneratedKeys();
             if(rs.next() && rs != null){
@@ -1099,7 +1186,8 @@ public class ApiServlet  extends HttpServlet {
             String scheduling_strategy,
             String scheduling_period,
             String start_nifi_process_id,
-            Boolean is_generated_nifi_process
+            Boolean is_generated_nifi_process,
+            String last_modified_by
     ) {
         Connection conn = null;
         try {
@@ -1113,6 +1201,7 @@ public class ApiServlet  extends HttpServlet {
                     "scheduling_period = ?, " +
                     "start_nifi_process_id = ?, " +
                     "is_generated_nifi_process = ? " +
+                    "last_modified_by = ? " +
                     "WHERE id = ?";
             PreparedStatement prep = conn.prepareStatement(updateQuery);
             prep.setString(1, aggregation_name);
@@ -1127,7 +1216,8 @@ public class ApiServlet  extends HttpServlet {
             else {
                 prep.setBoolean(7, is_generated_nifi_process);
             }
-            prep.setString(8, id);
+            prep.setString(8, last_modified_by);
+            prep.setString(9, id);
             prep.executeUpdate();
         } catch (SQLException e) {
             e.printStackTrace();
