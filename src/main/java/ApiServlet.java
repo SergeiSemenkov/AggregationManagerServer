@@ -225,12 +225,17 @@ public class ApiServlet  extends HttpServlet {
                                 );
 
                                 //set scheduling
-                                setProcessorScheduling(
-                                        start_nifi_process_id,
-                                        "0",
-                                        (String) json.get("scheduling_strategy"),
-                                        (String) json.get("scheduling_period")
-                                );
+                                String scheduling_strategy = (String) json.get("scheduling_strategy");
+                                String scheduling_period = (String) json.get("scheduling_period");
+                                if(scheduling_strategy != null && !scheduling_strategy.trim().isEmpty()
+                                        && scheduling_period != null && !scheduling_period.trim().isEmpty()) {
+                                    setProcessorScheduling(
+                                            start_nifi_process_id,
+                                            "0",
+                                            scheduling_strategy,
+                                            scheduling_period
+                                    );
+                                }
 
                                 //activate controllers
                                 setControllerServicesState(processGroupId, "ENABLED");
@@ -262,16 +267,8 @@ public class ApiServlet  extends HttpServlet {
 
                             JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
                             String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
-                            //change variables variables
-                            changeProcessGroupVariables(
-                                    processGroupId,
-                                    version,
-                                    start_nifi_process_id,
-                                    null,
-                                    table_name
-                            );
 
-                            result = CreateAggregationTableRow(
+                            String aggregationId = CreateAggregationTableRow(
                                     aggregation_name,
                                     table_name,
                                     (String)json.get("query"),
@@ -283,6 +280,15 @@ public class ApiServlet  extends HttpServlet {
                                     is_generated_nifi_process,
                                     userInfo == null? null: userInfo.userName,
                                     userInfo == null? null: userInfo.userName
+                            );
+
+                            //change variables variables
+                            changeProcessGroupVariables(
+                                    processGroupId,
+                                    version,
+                                    aggregationId,
+                                    null,
+                                    table_name
                             );
                         }
 
@@ -540,12 +546,17 @@ public class ApiServlet  extends HttpServlet {
                             start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
 
                             //set scheduling
-                            setProcessorScheduling(
-                                    start_nifi_process_id,
-                                    start_nifi_process_version,
-                                    (String) json.get("scheduling_strategy"),
-                                    (String) json.get("scheduling_period")
-                            );
+                            String scheduling_strategy = (String) json.get("scheduling_strategy");
+                            String scheduling_period = (String) json.get("scheduling_period");
+                            if(scheduling_strategy != null && !scheduling_strategy.trim().isEmpty()
+                                && scheduling_period != null && !scheduling_period.trim().isEmpty()) {
+                                setProcessorScheduling(
+                                        start_nifi_process_id,
+                                        start_nifi_process_version,
+                                        scheduling_strategy,
+                                        scheduling_period
+                                );
+                            }
 
                             System.out.println(is_generated_nifi_process);
                             if (is_generated_nifi_process) {
@@ -1200,7 +1211,7 @@ public class ApiServlet  extends HttpServlet {
                     "scheduling_strategy = ?, " +
                     "scheduling_period = ?, " +
                     "start_nifi_process_id = ?, " +
-                    "is_generated_nifi_process = ? " +
+                    "is_generated_nifi_process = ?," +
                     "last_modified_by = ? " +
                     "WHERE id = ?";
             PreparedStatement prep = conn.prepareStatement(updateQuery);
