@@ -24,6 +24,83 @@ import org.json.simple.parser.ParseException;
 public class ApiServlet  extends HttpServlet {
     //private static final String POSTGRESSQL_URL = "jdbc:postgresql://postgres:5432/postgres?stringtype=unspecified&user=postgres&password=postgres";
     //private static final String CLICKHOUSE_URL = "jdbc:clickhouse://10.51.98.64:8123/default?user=semenkovs&password=hbsFhYMK";
+    //private static final String NIFI_URL = "http://nifi:8080";
+    /*
+    Server properties:
+      - NIFI_URL=https://nifi:8443
+      - USE_NIFI_TOKEN=true
+      - NIFI_USERNAME=admin
+      - NIFI_PASSWORD=ctsBtRBKHRAx69EqUghvvgEvjnaLjFEB
+      - ADMIN_USERNAME=semenkovs
+      - KEYCLOAK_AUTH_ENABLED=false
+      - KEYCLOAK_AUTH_BASE_PATH=https://sso-st.dpd.ch/auth/
+      - KEYCLOAK_AUTH_REALM=DPD
+      - KEYCLOAK_CLIENT_ID=aggregation-manager-be
+      - KEYCLOAK_CLIENT_SECRET=kM9IwU2F8EvbVAfx9IoYpSM8Kvlb9izj
+      - POSTGRESSQL_URL=jdbc:postgresql://postgres:5432/postgres?stringtype=unspecified&user=postgres&password=postgres
+      - CLICKHOUSE_URL=jdbc:clickhouse://10.51.98.64:8123/dpd_sandbox?user=clickhouse-ro&password=cl1ckh0use-r0
+
+     */
+
+    private String nifiToken = null;
+
+    private String getNifiToken() throws IOException {
+        String result = null;
+
+        if(System.getenv("USE_NIFI_TOKEN") != null && System.getenv("USE_NIFI_TOKEN").equals("true")) {
+
+            if(nifiToken != null) {
+                result = nifiToken;
+            }
+            else {
+
+                SSLFix.execute();
+                URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/access/token");
+                HttpURLConnection con = (HttpURLConnection) url.openConnection();
+                con.setDoOutput(true);
+                con.setRequestMethod("POST");
+                con.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+//        con.setConnectTimeout(5000);
+//        con.setReadTimeout(5000);
+
+                OutputStream os = con.getOutputStream();
+                OutputStreamWriter osw = new OutputStreamWriter(os, "UTF-8");
+                osw.write("username=" + System.getenv("NIFI_USERNAME") + "&password=" + System.getenv("NIFI_PASSWORD"));
+                osw.flush();
+                osw.close();
+                os.close();  //don't forget to close the OutputStream
+
+                con.connect();
+
+                int responseCode = con.getResponseCode();
+                BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+                String inputLine;
+                StringBuffer response = new StringBuffer();
+
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
+                }
+                in.close();
+
+                result = response.toString();
+
+                // print result
+                System.out.println("GET Response Code :: " + responseCode);
+                System.out.println(result);
+
+                if (responseCode == HttpURLConnection.HTTP_OK || responseCode == 201) { // success
+                    nifiToken = result;
+                } else {
+                    result = null;
+                    System.out.println("POST request did not work.");
+                }
+
+                con.disconnect();
+            }
+        }
+
+        return result;
+    }
 
     @Override
     public void doGet(HttpServletRequest request, HttpServletResponse response)
@@ -1064,12 +1141,13 @@ public class ApiServlet  extends HttpServlet {
         return null;
     }
 
-    private String getNifiProcesses()throws IOException {
+    private String getNifiProcesses() throws IOException {
         String result = "[]";
 
-        URL url = new URL("http://nifi:8080/nifi-api/flow/search-results?q=IsAggregationManagerStart");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flow/search-results?q=IsAggregationManagerStart");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1519,10 +1597,11 @@ public class ApiServlet  extends HttpServlet {
     {
         HashMap<String, String> resultMap = new HashMap<String, String>();
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/root/template-instance");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/root/template-instance");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("POST");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1575,10 +1654,11 @@ public class ApiServlet  extends HttpServlet {
     {
 //        String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + processGroupId);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + processGroupId);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("PUT");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1630,11 +1710,12 @@ public class ApiServlet  extends HttpServlet {
     {
 //        String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + processGroupId + "/variable-registry");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + processGroupId + "/variable-registry");
         System.out.println(url.toString());
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("PUT");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1700,9 +1781,10 @@ public class ApiServlet  extends HttpServlet {
     private HashMap<String, Object> getControllerServices(String processGroupId)throws IOException {
         HashMap<String, Object> result = new HashMap<String, Object>();
 
-        URL url = new URL("http://nifi:8080/nifi-api/flow/process-groups/" + processGroupId + "/controller-services");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flow/process-groups/" + processGroupId + "/controller-services");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1747,9 +1829,10 @@ public class ApiServlet  extends HttpServlet {
     private HashMap<String, Object> getTemplatesMap()throws IOException {
         HashMap<String, Object> result = new HashMap<String, Object>();
 
-        URL url = new URL("http://nifi:8080/nifi-api/flow/templates");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flow/templates");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1830,11 +1913,12 @@ public class ApiServlet  extends HttpServlet {
     {
 //        String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/flow/process-groups/" + processGroupId + "/controller-services");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flow/process-groups/" + processGroupId + "/controller-services");
         //System.out.println(url.toString());
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("PUT");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1884,11 +1968,12 @@ public class ApiServlet  extends HttpServlet {
     {
 //        String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/flow/process-groups/" + processGroupId);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flow/process-groups/" + processGroupId);
         //System.out.println(url.toString());
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("PUT");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1936,9 +2021,10 @@ public class ApiServlet  extends HttpServlet {
     private String getStartNifiProcessId(String processGroupId)throws IOException {
         String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + processGroupId + "/processors");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + processGroupId + "/processors");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -1994,10 +2080,11 @@ public class ApiServlet  extends HttpServlet {
     {
 //        String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/processors/" + processorId);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/processors/" + processorId);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("PUT");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2221,9 +2308,10 @@ public class ApiServlet  extends HttpServlet {
     private String getProcessorState(String id) throws IOException {
         String result = "";
 
-        URL url = new URL("http://nifi:8080/nifi-api/processors/" + id);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/processors/" + id);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2271,10 +2359,11 @@ public class ApiServlet  extends HttpServlet {
     {
 //        String result = null;
 
-        URL url = new URL("http://nifi:8080/nifi-api/processors/" + processorId + "/run-status");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/processors/" + processorId + "/run-status");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setDoOutput(true);
         con.setRequestMethod("PUT");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2326,9 +2415,10 @@ public class ApiServlet  extends HttpServlet {
     private String getProcessorVersion(String id) throws IOException {
         String result = "";
 
-        URL url = new URL("http://nifi:8080/nifi-api/processors/" + id);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/processors/" + id);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2370,9 +2460,10 @@ public class ApiServlet  extends HttpServlet {
     private JSONObject getProcessorJson(String id) throws IOException {
         String result = "";
 
-        URL url = new URL("http://nifi:8080/nifi-api/processors/" + id);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/processors/" + id);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2412,9 +2503,10 @@ public class ApiServlet  extends HttpServlet {
     private JSONObject getProcessGroupJson(String id) throws IOException {
         String result = "";
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + id);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + id);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2453,9 +2545,10 @@ public class ApiServlet  extends HttpServlet {
 
     private JSONArray deleteProcessGroup(String id, String version) throws IOException {
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + id + "?version=" + version);
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + id + "?version=" + version);
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("DELETE");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2504,9 +2597,10 @@ public class ApiServlet  extends HttpServlet {
 
     private JSONObject getProcessGroupConnections(String id) throws IOException {
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + id + "/connections");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + id + "/connections");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2545,9 +2639,10 @@ public class ApiServlet  extends HttpServlet {
 
     private JSONObject getProcessGroupProcessGroups(String id) throws IOException {
 
-        URL url = new URL("http://nifi:8080/nifi-api/process-groups/" + id + "/process-groups");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + id + "/process-groups");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
@@ -2588,9 +2683,10 @@ public class ApiServlet  extends HttpServlet {
     // /process-groups/{id}/empty-all-connections-requests
     private JSONArray dropConnectionRequest(String id) throws IOException {
 
-        URL url = new URL("http://nifi:8080/nifi-api/flowfile-queues/" + id + "/drop-requests");
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flowfile-queues/" + id + "/drop-requests");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("POST");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
 //        con.setReadTimeout(5000);
