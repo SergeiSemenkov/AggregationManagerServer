@@ -140,6 +140,15 @@ public class ApiServlet  extends HttpServlet {
                         result = getAggregationList(true, null);
                     }
                 }
+                else if(parts[2].equals("aggregation-history-items")) {
+                    response.setContentType("application/json");
+                    if(parts.length > 3) {
+                        result = getAggregationHistoryItemList(false, parts[3]);
+                    }
+//                    else {
+//                        result = getAggregationHistoryItemList(true, null);
+//                    }
+                }
                 else if(parts[2].equals("users")) {
                     if(System.getenv("KEYCLOAK_AUTH_ENABLED") != null && System.getenv("KEYCLOAK_AUTH_ENABLED").equals("true")) {
                         if (userInfo == null || !userInfo.getIsAdmin()) {
@@ -564,6 +573,11 @@ public class ApiServlet  extends HttpServlet {
 
                                         setProcessorGroupState(process_group_id, "STOPPED");
 
+                                        ArrayList<JSONObject> processors = getProcessGroupProcessorsRecursive(process_group_id);
+                                        for (JSONObject jsonObject : processors) {
+                                            deleteProcessorThreads((String) jsonObject.get("id"));
+                                        }
+
                                         ArrayList<JSONObject> connections = getProcessGroupConnectionsRecursive(process_group_id);
                                         for (JSONObject jsonObject : connections) {
                                             dropConnectionRequest((String) jsonObject.get("id"));
@@ -606,6 +620,14 @@ public class ApiServlet  extends HttpServlet {
                                     start_nifi_process_version,
                                     "STOPPED");
 
+                            String processGroupContent;
+                            try {
+                                processGroupContent = getProcessGroupContent(processGroupId);
+                            }
+                            catch (Exception e){
+                                processGroupContent = "";
+                            }
+
                             UpdateAggregationTableRow(
                                     parts[3],
                                     (String) json.get("aggregation_name"),
@@ -617,7 +639,8 @@ public class ApiServlet  extends HttpServlet {
                                     //(String) json.get("start_nifi_process_id"),
                                     is_generated_nifi_process,
                                     //(Boolean) json.get("is_generated_nifi_process)"
-                                    userInfo == null? null: userInfo.userName
+                                    userInfo == null? null: userInfo.userName,
+                                    processGroupContent
                             );
 
                             start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
@@ -916,7 +939,68 @@ public class ApiServlet  extends HttpServlet {
                     currentStatus = "UNKNOWN";
                 }
                 ((JSONObject)jsonArray.get(i)).put("current_status", currentStatus);
+
+                String aggregationId = (String)jsonObject.get("id");
+                query = "select id, last_modified_by, last_schema_update from am.aggregation_history_items " +
+                        "where aggregation_id = ?";
+                prep = conn.prepareStatement(query);
+                prep.setString(1, aggregationId);
+                ResultSet rsHistory = prep.executeQuery();
+                JSONArray jsonArrayHistory = (JSONArray)getJsonArray(rsHistory);
+                ((JSONObject)jsonArray.get(i)).put("history_items", jsonArrayHistory);
             }
+            return jsonArray;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private JSONArray getAggregationHistoryItemListJson(Boolean all, String id) {
+        Connection conn = null;
+        JSONArray arr = new JSONArray();
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String query = "select \t\n" +
+                    "\tlast_schema_update,\n" +
+                    "\taggregation_id,\n" +
+                    "\taggregation_name,\n" +
+                    "\ttable_name,\n" +
+                    "\tquery,\n" +
+                    "\tscheduling_period,\n" +
+                    "\tscheduling_strategy,\n" +
+                    "\tprocess_group_id,\n" +
+                    "\tstart_nifi_process_id,\n" +
+                    "\tis_generated_nifi_process,\n" +
+                    "\tcreated_by,\n" +
+                    "\tlast_modified_by\n" +
+                    " from am.aggregation_history_items";
+
+            PreparedStatement prep;
+            if(all){
+                prep = conn.prepareStatement(query);
+            }
+            else {
+                query += " WHERE id = ?";
+                prep = conn.prepareStatement(query);
+                prep.setString(1, id);
+            }
+            ResultSet rs = prep.executeQuery();
+            JSONArray jsonArray = (JSONArray)getJsonArray(rs);
             return jsonArray;
         } catch (SQLException e) {
             e.printStackTrace();
@@ -939,6 +1023,19 @@ public class ApiServlet  extends HttpServlet {
 
     private String getAggregationList(Boolean all, String id) {
         JSONArray jsonArray = getAggregationListJson(all, id);
+        if(all) {
+            return JSONValue.toJSONString(jsonArray);
+        }
+        else if(jsonArray.size() > 0) {
+            return JSONValue.toJSONString(jsonArray.get(0));
+        }
+        else {
+            return "";
+        }
+    }
+
+    private String getAggregationHistoryItemList(Boolean all, String id) {
+        JSONArray jsonArray = getAggregationHistoryItemListJson(all, id);
         if(all) {
             return JSONValue.toJSONString(jsonArray);
         }
@@ -1276,13 +1373,52 @@ public class ApiServlet  extends HttpServlet {
             String scheduling_period,
             String start_nifi_process_id,
             Boolean is_generated_nifi_process,
-            String last_modified_by
+            String last_modified_by,
+            String processGroupContent
     ) {
         Connection conn = null;
         try {
             Class.forName("org.postgresql.Driver");
             conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
-            String updateQuery = "UPDATE am.aggregations SET " +
+
+            String updateQuery = "insert into am.aggregation_history_items\n" +
+                    "(\n" +
+                    "\tlast_schema_update,\n" +
+                    "\taggregation_id,\n" +
+                    "\taggregation_name,\n" +
+                    "\ttable_name,\n" +
+                    "\tquery,\n" +
+                    "\tscheduling_period,\n" +
+                    "\tscheduling_strategy,\n" +
+                    "\tprocess_group_id,\n" +
+                    "\tstart_nifi_process_id,\n" +
+                    "\tis_generated_nifi_process,\n" +
+                    "\tcreated_by,\n" +
+                    "\tlast_modified_by,\n" +
+                    "\tprocess_group_content\n" +
+                    ")\n" +
+                    "select \n" +
+                    "\tlast_schema_update,\n" +
+                    "\tid,\n" +
+                    "\taggregation_name,\n" +
+                    "\ttable_name,\n" +
+                    "\tquery,\n" +
+                    "\tscheduling_period,\n" +
+                    "\tscheduling_strategy,\n" +
+                    "\tprocess_group_id,\n" +
+                    "\tstart_nifi_process_id,\n" +
+                    "\tis_generated_nifi_process,\n" +
+                    "\tcreated_by,\n" +
+                    "\tlast_modified_by,\n" +
+                    "\t?\n" +
+                    "from am.aggregations\n" +
+                    "where id = ?";
+            PreparedStatement prep = conn.prepareStatement(updateQuery);
+            prep.setString(1, processGroupContent);
+            prep.setString(2, id);
+            prep.executeUpdate();
+
+            updateQuery = "UPDATE am.aggregations SET " +
                     "aggregation_name = ?, " +
                     "table_name = ?, " +
                     "query = ?, " +
@@ -1292,7 +1428,7 @@ public class ApiServlet  extends HttpServlet {
                     "is_generated_nifi_process = ?," +
                     "last_modified_by = ? " +
                     "WHERE id = ?";
-            PreparedStatement prep = conn.prepareStatement(updateQuery);
+            prep = conn.prepareStatement(updateQuery);
             prep.setString(1, aggregation_name);
             prep.setString(2, table_name);
             prep.setString(3, query);
@@ -1308,6 +1444,8 @@ public class ApiServlet  extends HttpServlet {
             prep.setString(8, last_modified_by);
             prep.setString(9, id);
             prep.executeUpdate();
+
+
         } catch (SQLException e) {
             e.printStackTrace();
             System.out.println(e.getMessage());
@@ -2352,6 +2490,41 @@ public class ApiServlet  extends HttpServlet {
         return result;
     }
 
+    private String getProcessGroupContent(String id) throws IOException {
+        String result = "";
+
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + id + "/download");
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("GET");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
+        con.setRequestProperty("Content-Type", "application/json");
+//        con.setConnectTimeout(5000);
+//        con.setReadTimeout(5000);
+
+        int responseCode = con.getResponseCode();
+        System.out.println("GET Response Code :: " + responseCode);
+        if (responseCode == HttpURLConnection.HTTP_OK) { // success
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            // print result
+            result = response.toString();
+//            System.out.println(result);
+
+        } else {
+            System.out.println("GET request did not work.");
+        }
+
+        con.disconnect();
+        return result;
+    }
+
     private void setProcessorState (
             String processorId,
             String version,
@@ -2678,14 +2851,26 @@ public class ApiServlet  extends HttpServlet {
 
         return null;
     }
+    private ArrayList<JSONObject> getProcessGroupProcessorsRecursive(String id) throws IOException {
+        ArrayList<JSONObject> processors = new ArrayList<JSONObject>();
 
-    // can be POST
-    // /process-groups/{id}/empty-all-connections-requests
-    private JSONArray dropConnectionRequest(String id) throws IOException {
+        JSONObject jsonConnections = getProcessGroupProcessors(id);
+        for(Object jsonConnection: (JSONArray)jsonConnections.get("processors")) {
+            processors.add((JSONObject)jsonConnection);
+        }
+        JSONObject jsonProcessGroups = getProcessGroupProcessGroups(id);
+        for(Object pocessGroup: (JSONArray)jsonProcessGroups.get("processGroups")) {
+            JSONObject jsonProcessGroup = (JSONObject)pocessGroup;
+            processors.addAll(getProcessGroupConnectionsRecursive((String)jsonProcessGroup.get("id")));
+        }
 
-        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flowfile-queues/" + id + "/drop-requests");
+        return processors;
+    }
+    private JSONObject getProcessGroupProcessors(String id) throws IOException {
+
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/process-groups/" + id + "/processors");
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
-        con.setRequestMethod("POST");
+        con.setRequestMethod("GET");
         String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
         con.setRequestProperty("Content-Type", "application/json");
 //        con.setConnectTimeout(5000);
@@ -2707,8 +2892,89 @@ public class ApiServlet  extends HttpServlet {
             String result = response.toString();
             //System.out.println(result);
 
+            try {
+                return (JSONObject) JSONValue.parseWithException(result);
+            }catch (org.json.simple.parser.ParseException e){
+                e.printStackTrace();
+                System.out.println(e.getMessage());
+            }
+
+        } else {
+            System.out.println("GET request did not work.");
+        }
+
+        con.disconnect();
+
+        return null;
+    }
+
+    // can be POST
+    // /process-groups/{id}/empty-all-connections-requests
+    private JSONArray dropConnectionRequest(String id) throws IOException {
+
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/flowfile-queues/" + id + "/drop-requests");
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("POST");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
+        con.setRequestProperty("Content-Type", "application/json");
+//        con.setConnectTimeout(5000);
+//        con.setReadTimeout(5000);
+
+        int responseCode = con.getResponseCode();
+        System.out.println("POST Response Code :: " + responseCode);
+        if (responseCode == HttpURLConnection.HTTP_OK) { // success
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            // print result
+            String result = response.toString();
+            //System.out.println(result);
+
         } else {
             System.out.println("POST request did not work.");
+        }
+
+        con.disconnect();
+
+        return null;
+    }
+
+    // can be POST
+    // /process-groups/{id}/empty-all-connections-requests
+    private JSONArray deleteProcessorThreads(String id) throws IOException {
+
+        URL url = new URL(System.getenv("NIFI_URL") + "/nifi-api/processors/" + id + "/threads");
+        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        con.setRequestMethod("DELETE");
+        String token = getNifiToken(); if(token != null) {con.setRequestProperty("Authorization", "Bearer " + token);}
+        con.setRequestProperty("Content-Type", "application/json");
+//        con.setConnectTimeout(5000);
+//        con.setReadTimeout(5000);
+
+        int responseCode = con.getResponseCode();
+        System.out.println("DELETE Response Code :: " + responseCode);
+        if (responseCode == HttpURLConnection.HTTP_OK) { // success
+            BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+            String inputLine;
+            StringBuffer response = new StringBuffer();
+
+            while ((inputLine = in.readLine()) != null) {
+                response.append(inputLine);
+            }
+            in.close();
+
+            // print result
+            String result = response.toString();
+            //System.out.println(result);
+
+        } else {
+            System.out.println("DELETE request did not work.");
         }
 
         con.disconnect();

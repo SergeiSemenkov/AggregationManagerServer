@@ -18,6 +18,26 @@ CREATE TABLE am.aggregations (
 	CONSTRAINT aggregations_pkey PRIMARY KEY (id)
 );
 
+-- am.aggregation_history_items
+
+CREATE TABLE am.aggregation_history_items (
+	id uuid NOT NULL DEFAULT gen_random_uuid(),
+	last_schema_update timestamptz NULL,
+	aggregation_id uuid NOT NULL,
+	aggregation_name varchar(255) NULL,
+	table_name varchar(255) NULL,
+	query text NULL,
+	scheduling_period varchar(255) NULL,
+	scheduling_strategy varchar(255) NULL,
+	process_group_id varchar(255) NULL,
+	start_nifi_process_id varchar(255) NULL,
+	is_generated_nifi_process bool NULL,
+	created_by varchar(255) NULL,
+	last_modified_by varchar(255) NULL,
+	process_group_content text NULL,
+	CONSTRAINT aggregation_history_items_pkey PRIMARY KEY (id)
+);
+
 -- am.events definition
 
 CREATE TABLE am.events (
