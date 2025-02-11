@@ -255,6 +255,9 @@ public class ApiServlet  extends HttpServlet {
 
                         boolean is_generated_nifi_process = (Boolean)json.get("is_generated_nifi_process");
 
+                        String processGroupId = null;
+                        String aggregationId = null;
+
                         if(is_generated_nifi_process) {
                             //get clickhouse query
                             String query = (String) json.get("query");
@@ -272,7 +275,7 @@ public class ApiServlet  extends HttpServlet {
                                     //nifiNewTemplateInstance((String)settings.get("default_template_id"));
                                     nifiNewTemplateInstance((String)json.get("template"));
 
-                            String processGroupId = processGroupParameters.get("nifi_process_group_id");
+                            processGroupId = processGroupParameters.get("nifi_process_group_id");
 
                             //set name
                             changeProcessGroupName(
@@ -283,7 +286,7 @@ public class ApiServlet  extends HttpServlet {
 
                             start_nifi_process_id = this.getStartNifiProcessId(processGroupId);
 
-                            String aggregationId = null;
+                            aggregationId = null;
                             try {
                                 aggregationId = CreateAggregationTableRow(
                                         aggregation_name,
@@ -349,12 +352,12 @@ public class ApiServlet  extends HttpServlet {
                         }
                         else {
                             JSONObject processJSON = getProcessorJson(start_nifi_process_id);
-                            String processGroupId = ((JSONObject)processJSON.get("component")).get("parentGroupId").toString();
+                            processGroupId = ((JSONObject)processJSON.get("component")).get("parentGroupId").toString();
 
                             JSONObject processGroupJSON = getProcessGroupJson(processGroupId);
                             String version = ((JSONObject) processGroupJSON.get("revision")).get("version").toString();
 
-                            String aggregationId = CreateAggregationTableRow(
+                            aggregationId = CreateAggregationTableRow(
                                     aggregation_name,
                                     table_name,
                                     (String)json.get("query"),
@@ -378,6 +381,14 @@ public class ApiServlet  extends HttpServlet {
                             );
                         }
 
+                        String processGroupContent;
+                        try {
+                            processGroupContent = getProcessGroupContent(processGroupId);
+                        }
+                        catch (Exception e){
+                            processGroupContent = "";
+                        }
+                        this.addAggregationHistoryItem(aggregationId, processGroupContent);
 
                     }catch (org.json.simple.parser.ParseException e){
                         response.setStatus(500);
@@ -620,27 +631,21 @@ public class ApiServlet  extends HttpServlet {
                                     start_nifi_process_version,
                                     "STOPPED");
 
-                            String processGroupContent;
-                            try {
-                                processGroupContent = getProcessGroupContent(processGroupId);
-                            }
-                            catch (Exception e){
-                                processGroupContent = "";
-                            }
+                            String aggregationId = parts[3];
 
                             UpdateAggregationTableRow(
-                                    parts[3],
+                                    aggregationId,
                                     (String) json.get("aggregation_name"),
                                     (String) json.get("table_name"),
                                     (String) json.get("query"),
+                                    new java.sql.Timestamp(System.currentTimeMillis()),
                                     (String) json.get("scheduling_strategy"),
                                     (String) json.get("scheduling_period"),
                                     start_nifi_process_id,
                                     //(String) json.get("start_nifi_process_id"),
                                     is_generated_nifi_process,
                                     //(Boolean) json.get("is_generated_nifi_process)"
-                                    userInfo == null? null: userInfo.userName,
-                                    processGroupContent
+                                    userInfo == null? null: userInfo.userName
                             );
 
                             start_nifi_process_version = getProcessorVersion(start_nifi_process_id);
@@ -701,6 +706,16 @@ public class ApiServlet  extends HttpServlet {
 
                                 }
                             }
+
+                            String processGroupContent;
+                            try {
+                                processGroupContent = getProcessGroupContent(processGroupId);
+                            }
+                            catch (Exception e){
+                                processGroupContent = "";
+                            }
+                            this.addAggregationHistoryItem(aggregationId, processGroupContent);
+
                         } catch (org.json.simple.parser.ParseException e) {
                             response.setStatus(500);
                             response.setContentType("text/plain");
@@ -1369,13 +1384,66 @@ public class ApiServlet  extends HttpServlet {
             String aggregation_name,
             String table_name,
             String query,
+            Timestamp last_schema_update,
             String scheduling_strategy,
             String scheduling_period,
             String start_nifi_process_id,
             Boolean is_generated_nifi_process,
-            String last_modified_by,
-            String processGroupContent
+            String last_modified_by
     ) {
+        Connection conn = null;
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+
+            String updateQuery = "UPDATE am.aggregations SET " +
+                    "aggregation_name = ?, " +
+                    "table_name = ?, " +
+                    "query = ?, " +
+                    "last_schema_update = ?, " +
+                    "scheduling_strategy = ?, " +
+                    "scheduling_period = ?, " +
+                    "start_nifi_process_id = ?, " +
+                    "is_generated_nifi_process = ?," +
+                    "last_modified_by = ? " +
+                    "WHERE id = ?";
+            PreparedStatement prep = conn.prepareStatement(updateQuery);
+            prep.setString(1, aggregation_name);
+            prep.setString(2, table_name);
+            prep.setString(3, query);
+            prep.setTimestamp(4, last_schema_update);
+            prep.setString(5, scheduling_strategy);
+            prep.setString(6, scheduling_period);
+            prep.setString(7, start_nifi_process_id);
+            if(is_generated_nifi_process == null) {
+                prep.setNull(8, java.sql.Types.NULL);
+            }
+            else {
+                prep.setBoolean(8, is_generated_nifi_process);
+            }
+            prep.setString(9, last_modified_by);
+            prep.setString(10, id);
+            prep.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private void addAggregationHistoryItem(String id, String processGroupContent) {
         Connection conn = null;
         try {
             Class.forName("org.postgresql.Driver");
@@ -1418,34 +1486,6 @@ public class ApiServlet  extends HttpServlet {
             prep.setString(2, id);
             prep.executeUpdate();
 
-            updateQuery = "UPDATE am.aggregations SET " +
-                    "aggregation_name = ?, " +
-                    "table_name = ?, " +
-                    "query = ?, " +
-                    "scheduling_strategy = ?, " +
-                    "scheduling_period = ?, " +
-                    "start_nifi_process_id = ?, " +
-                    "is_generated_nifi_process = ?," +
-                    "last_modified_by = ? " +
-                    "WHERE id = ?";
-            prep = conn.prepareStatement(updateQuery);
-            prep.setString(1, aggregation_name);
-            prep.setString(2, table_name);
-            prep.setString(3, query);
-            prep.setString(4, scheduling_strategy);
-            prep.setString(5, scheduling_period);
-            prep.setString(6, start_nifi_process_id);
-            if(is_generated_nifi_process == null) {
-                prep.setNull(7, java.sql.Types.NULL);
-            }
-            else {
-                prep.setBoolean(7, is_generated_nifi_process);
-            }
-            prep.setString(8, last_modified_by);
-            prep.setString(9, id);
-            prep.executeUpdate();
-
-
         } catch (SQLException e) {
             e.printStackTrace();
             System.out.println(e.getMessage());
@@ -1462,7 +1502,6 @@ public class ApiServlet  extends HttpServlet {
                 e.printStackTrace();
             }
         }
-        return null;
     }
 
     private String CreateUserTableRow(
