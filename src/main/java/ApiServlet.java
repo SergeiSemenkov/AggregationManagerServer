@@ -191,6 +191,12 @@ public class ApiServlet  extends HttpServlet {
                             request.getParameter("table")
                     );
                 }
+                else if(parts[2].equals("aggregation_history_process_group_content")) {
+                    response.setContentType("application/json");
+                    if(parts.length > 3) {
+                        result = getAggregationHistoryProcessGroupContent(parts[3]);
+                    }
+                }
             }
             PrintWriter out = response.getWriter();
             out.print(result);
@@ -1060,6 +1066,46 @@ public class ApiServlet  extends HttpServlet {
         else {
             return "";
         }
+    }
+
+    private String getAggregationHistoryProcessGroupContent(String id) {
+        Connection conn = null;
+        JSONArray arr = new JSONArray();
+        try {
+            Class.forName("org.postgresql.Driver");
+            conn = DriverManager.getConnection(System.getenv("POSTGRESSQL_URL"));
+            String query = "select \t\n" +
+                    "\tprocess_group_content\n" +
+                    " from am.aggregation_history_items\n" +
+                    " where  id = ?";
+
+            PreparedStatement prep;
+            prep = conn.prepareStatement(query);
+            prep.setString(1, id);
+            ResultSet rs = prep.executeQuery();
+            if (rs.next()) {
+                return rs.getString("process_group_content");
+            }
+            else {
+                throw new RuntimeException("There is no aggregation_history_items with id='" + id  + "'.");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        } catch (ClassNotFoundException e) {
+            e.printStackTrace();
+            System.out.println(e.getMessage());
+        }
+        finally {
+            try {
+                if (conn != null && !conn.isClosed()) {
+                    conn.close();
+                }
+            } catch (SQLException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
     }
 
     private JSONArray getUserListJson(Boolean all, String id) {
